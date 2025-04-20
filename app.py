@@ -63,26 +63,30 @@ class EmotionAnalysis(db.Model):
 
 # Load Pretrained ML Model
 try:
-    model = load_model('D:/SoftwareEngineering/emotion_model.h5')
+    model = load_model('emotion_model.h5')
     print(model.summary())
 except Exception as e:
     print(f"Error loading model: {e}")
     model = None
 
-# Function to detect facial landmarks using MediaPipe
+import threading
+mp_lock = threading.Lock()
+
 def detect_landmarks(image):
     mp_face_mesh = mp.solutions.face_mesh
-    with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1) as face_mesh:
-        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        results = face_mesh.process(rgb_image)
-        if results.multi_face_landmarks:
-            h, w, _ = image.shape
-            landmarks = []
-            for lm in results.multi_face_landmarks[0].landmark:
-                x, y = int(lm.x * w), int(lm.y * h)
-                landmarks.append([x, y])
-            return np.array(landmarks)
-        return None
+    with mp_lock:
+        with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1) as face_mesh:
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = face_mesh.process(rgb_image)
+            if results.multi_face_landmarks:
+                h, w, _ = image.shape
+                landmarks = []
+                for lm in results.multi_face_landmarks[0].landmark:
+                    x, y = int(lm.x * w), int(lm.y * h)
+                    landmarks.append([x, y])
+                return np.array(landmarks)
+            return None
+
 
 def predict_emotion(image):
     if model is None:
