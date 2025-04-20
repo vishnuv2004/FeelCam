@@ -20,3 +20,4 @@ scipy==1.12.0
 scikit-learn==1.4.2
 SQLAlchemy==2.0.38
 pandas==2.2.3
+psycopg2-binary
