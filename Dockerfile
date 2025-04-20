@@ -1,5 +1,5 @@
 # Use Python 3.9 base image
-FROM python:3.9-slim-bullseye
+FROM python:3.10-slim-bullseye
 
 # Install system dependencies for MediaPipe/OpenCV
 RUN apt-get update && apt-get install -y \
