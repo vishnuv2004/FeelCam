@@ -117,9 +117,15 @@
         box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3);
       }
 
-      img.video-feed {
+      #videoElement {
         width: 100%;
         display: block;
+        border-radius: 14px;
+      }
+
+      #processedImage {
+        display: none;
+        width: 100%;
         border-radius: 14px;
       }
 
@@ -157,6 +163,12 @@
 
       .btn:active {
         transform: translateY(0);
+      }
+
+      .btn:disabled {
+        background: #7e8895;
+        transform: none;
+        cursor: not-allowed;
       }
 
       .btn-secondary {
@@ -261,6 +273,17 @@
         color: var(--text-light);
       }
 
+      .error-message {
+        display: none;
+        margin: 15px 0;
+        padding: 10px;
+        background: rgba(231, 76, 60, 0.2);
+        color: #fff;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: bold;
+      }
+
       footer {
         margin-top: 40px;
         text-align: center;
@@ -311,13 +334,12 @@
 
       <div class="container">
         <div class="video-container">
-          <img
-            src="{{ url_for('video_feed') }}"
-            alt="Video Feed"
-            class="video-feed"
-          />
+          <video id="videoElement" autoplay></video>
+          <img id="processedImage" alt="Processed frame" />
           <div class="status-badge" id="currentEmotion">Starting analysis...</div>
         </div>
+
+        <div class="error-message" id="errorMessage"></div>
 
         <div class="session-info">
           <p>Session in progress. We're analyzing your facial expressions in real-time.</p>
@@ -329,7 +351,9 @@
         </div>
 
         <div class="controls">
-          <a href="{{ url_for('end_session') }}" class="btn">End Session</a>
+          <button id="startButton" class="btn">Start Camera</button>
+          <button id="stopButton" class="btn" disabled>Stop Camera</button>
+          <a href="{{ url_for('end_session') }}" class="btn" id="endSessionBtn">End Session</a>
           <a href="{{ url_for('index') }}" class="btn btn-secondary">Back to Home</a>
         </div>
 
@@ -342,53 +366,188 @@
     </div>
 
     <script>
+      // DOM Elements
+      const video = document.getElementById('videoElement');
+      const processedImage = document.getElementById('processedImage');
+      const startButton = document.getElementById('startButton');
+      const stopButton = document.getElementById('stopButton');
+      const endSessionBtn = document.getElementById('endSessionBtn');
+      const emotionDisplay = document.getElementById('currentEmotion');
+      const emotionStats = document.getElementById('emotionStats');
+      const timerElement = document.getElementById('sessionTimer');
+      const errorMessage = document.getElementById('errorMessage');
+
+      // Global variables
+      let stream = null;
+      let isCapturing = false;
+      let captureInterval = null;
+      let emotionsData = {};
+      const FPS = 3; // Frames per second to capture (reduced to avoid overloading)
+      
       // Session timer
       let seconds = 0;
       let minutes = 0;
-      const timerElement = document.getElementById('sessionTimer');
+      let timerInterval = null;
 
-      setInterval(() => {
+      // Start the webcam
+      startButton.addEventListener('click', async () => {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+              width: { ideal: 640 },
+              height: { ideal: 480 }
+            }
+          });
+          
+          video.srcObject = stream;
+          isCapturing = true;
+          startButton.disabled = true;
+          stopButton.disabled = false;
+          video.style.display = 'block';
+          processedImage.style.display = 'none';
+          errorMessage.style.display = 'none';
+          
+          // Start capturing frames at specified FPS
+          captureInterval = setInterval(captureFrame, 1000 / FPS);
+          
+          // Start the timer
+          startTimer();
+        } catch (error) {
+          console.error('Error accessing webcam:', error);
+          errorMessage.textContent = 'Could not access the webcam. Please make sure it is connected and you have granted permission.';
+          errorMessage.style.display = 'block';
+        }
+      });
+
+      // Stop the webcam
+      stopButton.addEventListener('click', () => {
+        stopCapturing();
+      });
+
+      function stopCapturing() {
+        if (stream) {
+          const tracks = stream.getTracks();
+          tracks.forEach(track => track.stop());
+          video.srcObject = null;
+          stream = null;
+        }
+        
+        isCapturing = false;
+        clearInterval(captureInterval);
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        
+        // Pause the timer
+        clearInterval(timerInterval);
+      }
+
+      // Start the timer
+      function startTimer() {
+        // Reset timer
+        seconds = 0;
+        minutes = 0;
+        timerElement.textContent = '00:00';
+        
+        // Start timer interval
+        timerInterval = setInterval(() => {
           seconds++;
           if (seconds >= 60) {
-              seconds = 0;
-              minutes++;
+            seconds = 0;
+            minutes++;
           }
 
           const formattedMinutes = String(minutes).padStart(2, '0');
           const formattedSeconds = String(seconds).padStart(2, '0');
           timerElement.textContent = `${formattedMinutes}:${formattedSeconds}`;
-      }, 1000);
-
-      // Periodically update emotion stats
-      const emotionDisplay = document.getElementById('currentEmotion');
-      const emotionStats = document.getElementById('emotionStats');
-
-      function updateEmotionStats() {
-          fetch('/current_emotion_stats')
-              .then(response => response.json())
-              .then(data => {
-                  if (data.error) return;
-
-                  // Update current emotion display
-                  emotionDisplay.textContent = `Current: ${data.dominant_emotion}`;
-
-                  // Update emotion pills
-                  emotionStats.innerHTML = '';
-                  Object.entries(data.scores).forEach(([emotion, percentage]) => {
-                      const pill = document.createElement('div');
-                      pill.className = 'emotion-pill';
-                      pill.textContent = `${emotion}: ${Math.round(percentage * 100)}%`;
-                      emotionStats.appendChild(pill);
-                  });
-              })
-              .catch(error => console.error('Error fetching emotion stats:', error));
+        }, 1000);
       }
 
-      // Update stats every 3 seconds
-      setInterval(updateEmotionStats, 3000);
+      // Capture a frame from the video and send to server
+      function captureFrame() {
+        if (!isCapturing) return;
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        
+        const context = canvas.getContext('2d');
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Convert to base64 for sending to server
+        const imageDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        
+        // Extract the base64 data
+        const base64Data = imageDataUrl.split(',')[1];
+        
+        // Send to server
+        fetch('/process_frame', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ image: imageDataUrl })
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            // Update the processed image
+            processedImage.src = data.processed_image;
+            processedImage.style.display = 'block';
+            video.style.display = 'none';
+            
+            // Update emotion display
+            emotionDisplay.textContent = `Current: ${data.emotion}`;
+            
+            // Store emotion data
+            emotionsData = data.scores;
+            
+            // Update emotion pills
+            updateEmotionStats(data.emotion, data.scores);
+          } else if (data.error) {
+            console.error('Error processing frame:', data.error);
+            errorMessage.textContent = data.error;
+            errorMessage.style.display = 'block';
+          }
+        })
+        .catch(error => {
+          console.error('Error sending frame to server:', error);
+          errorMessage.textContent = 'Error communicating with server. Please try again.';
+          errorMessage.style.display = 'block';
+        });
+      }
+      
+      // Update emotion statistics display
+      function updateEmotionStats(dominantEmotion, scores) {
+        emotionStats.innerHTML = '';
+        
+        // If scores is a string (JSON), parse it
+        if (typeof scores === 'string') {
+          try {
+            scores = JSON.parse(scores);
+          } catch (e) {
+            console.error('Error parsing scores:', e);
+            return;
+          }
+        }
+        
+        // Add pills for each emotion
+        Object.entries(scores).forEach(([emotion, value]) => {
+          const pill = document.createElement('div');
+          pill.className = 'emotion-pill';
+          pill.textContent = `${emotion}: ${(value * 100).toFixed(1)}%`;
+          emotionStats.appendChild(pill);
+        });
+      }
 
-      // Initial update
-      setTimeout(updateEmotionStats, 2000);
+      // Clean up resources when page unloads
+      window.addEventListener('beforeunload', () => {
+        stopCapturing();
+      });
+      
+      // Start camera automatically on page load
+      document.addEventListener('DOMContentLoaded', () => {
+        startButton.click();
+      });
     </script>
 </body>
 </html>

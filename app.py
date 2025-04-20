@@ -14,6 +14,7 @@ import json
 import threading
 import time
 import logging
+import re
 from dotenv import load_dotenv
 
 import mediapipe as mp
@@ -63,7 +64,7 @@ class EmotionAnalysis(db.Model):
 
 # Load Pretrained ML Model
 try:
-    import os
+    # Use relative path with os.path for cross-platform compatibility
     model_path = os.path.join(os.path.dirname(__file__), "emotion_model.h5")
     model = load_model(model_path)
     print("Model loaded successfully.")
@@ -72,12 +73,13 @@ except Exception as e:
     print(f"Error loading model: {e}")
     model = None
 
-import threading
+# Global lock for MediaPipe (thread safety)
 mp_lock = threading.Lock()
 
+# Function to detect facial landmarks using MediaPipe
 def detect_landmarks(image):
     mp_face_mesh = mp.solutions.face_mesh
-    with mp_lock:
+    with mp_lock:  # Thread safety for MediaPipe
         with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1) as face_mesh:
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             results = face_mesh.process(rgb_image)
@@ -89,7 +91,6 @@ def detect_landmarks(image):
                     landmarks.append([x, y])
                 return np.array(landmarks)
             return None
-
 
 def predict_emotion(image):
     if model is None:
@@ -104,9 +105,11 @@ class EmotionTracker:
     def __init__(self):
         self.emotions = []
         self.lock = threading.Lock()
-    def add_emotion(self, emotion, confidence):
+    def add_emotion(self, emotion, confidence, timestamp=None):
         with self.lock:
-            self.emotions.append((emotion, confidence, datetime.now()))
+            if timestamp is None:
+                timestamp = datetime.now()
+            self.emotions.append((emotion, confidence, timestamp))
     def get_results(self):
         with self.lock:
             if not self.emotions:
@@ -208,12 +211,24 @@ def analyze():
     landmarks = detect_landmarks(image)
     if landmarks is None:
         return redirect(url_for('camera'))
-    emotion = predict_emotion(image)
-    new_analysis = EmotionAnalysis(user_id=session['user_id'], emotion=max(emotion, key=emotion.get),
-                                   confidence=max(emotion.values()))
+    
+    scores = predict_emotion(image)
+    if 'error' in scores:
+        flash(scores['error'], 'danger')
+        return redirect(url_for('camera'))
+        
+    dominant_emotion = max(scores, key=scores.get)
+    confidence = float(scores[dominant_emotion])
+    
+    new_analysis = EmotionAnalysis(
+        user_id=session['user_id'],
+        emotion=dominant_emotion,
+        confidence=confidence
+    )
     db.session.add(new_analysis)
     db.session.commit()
-    return render_template('analysis.html', emotion=emotion, landmarks=landmarks.tolist())
+    
+    return render_template('analysis.html', emotion=scores, landmarks=landmarks.tolist())
 
 @app.route('/history')
 def history():
@@ -356,17 +371,27 @@ def process_image():
     landmarks = detect_landmarks(image)
     if landmarks is None:
         return jsonify({'error': 'No face detected'}), 400
+        
     scores = predict_emotion(image)
     if 'error' in scores:
-        return jsonify({'error': scores['error']}), 500  # or render a template with an error message
+        return jsonify({'error': scores['error']}), 500
+        
     dominant_emotion = max(scores, key=scores.get)
-    confidence = max(scores.values())
-    new_analysis = EmotionAnalysis(user_id=session['user_id'], emotion=dominant_emotion,
-                               confidence=confidence)
-    db.session.add(new_analysis)
-    db.session.commit()
-    ({
-
+    confidence = float(scores[dominant_emotion])
+    
+    try:
+        new_analysis = EmotionAnalysis(
+            user_id=session['user_id'],
+            emotion=dominant_emotion,
+            confidence=confidence
+        )
+        db.session.add(new_analysis)
+        db.session.commit()
+    except Exception as e:
+        print(f"Database error: {e}")
+        # Continue even if DB fails
+        
+    return jsonify({
         'emotion': dominant_emotion,
         'scores': json.dumps(scores)
     })
@@ -425,11 +450,13 @@ def process_upload():
             return redirect(url_for('upload'))
         logger.debug(f"Emotion scores: {scores}")
         dominant_emotion = max(scores, key=scores.get)
+        confidence = float(scores[dominant_emotion])
         logger.debug(f"Dominant emotion: {dominant_emotion}")
+        
         new_analysis = EmotionAnalysis(
             user_id=session['user_id'],
             emotion=dominant_emotion,
-            confidence=max(scores.values())
+            confidence=confidence
         )
         db.session.add(new_analysis)
         db.session.commit()
@@ -440,8 +467,14 @@ def process_upload():
         flash(f'Error processing image: {str(e)}', 'danger')
         return redirect(url_for('upload'))
 
+# Note: This function only works locally, not on cloud deployments
 @app.route('/video_feed')
 def video_feed():
+    # For cloud deployment, redirect to browser-based camera
+    is_cloud = os.environ.get('RENDER') or ('onrender.com' in request.host)
+    if is_cloud:
+        return redirect(url_for('videoscan'))
+        
     if 'user_id' not in session:
         return redirect(url_for('login'))
     user_id = session['user_id']
@@ -485,7 +518,18 @@ def video_feed():
                         (0, 255, 0),
                         2
                     )
-                # NO landmark drawing code here!
+                # Draw bounding box using landmarks
+                if landmarks is not None:
+                    try:
+                        # Just draw a rectangle around the face
+                        x_min = min(landmarks[:, 0])
+                        y_min = min(landmarks[:, 1])
+                        x_max = max(landmarks[:, 0])
+                        y_max = max(landmarks[:, 1])
+                        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
+                    except:
+                        pass
+                        
                 ret, jpeg = cv2.imencode('.jpg', frame)
                 frame_bytes = jpeg.tobytes()
                 yield (b'--frame\r\n'
@@ -495,6 +539,84 @@ def video_feed():
         finally:
             cap.release()
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
+
+# Add new route for browser-based frame processing for cloud
+@app.route('/process_frame', methods=['POST'])
+def process_frame():
+    if 'user_id' not in session:
+        return jsonify({'success': False, 'error': 'Not logged in'}), 401
+    
+    try:
+        # Get the image data from the request
+        data = request.get_json()
+        img_data = data.get('image', '')
+        
+        # Remove the header from the base64 string
+        img_data = re.sub('^data:image/.+;base64,', '', img_data)
+        
+        # Decode the base64 string
+        img_bytes = base64.b64decode(img_data)
+        img_array = np.frombuffer(img_bytes, dtype=np.uint8)
+        
+        # Decode the image using OpenCV
+        image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+        
+        if image is None:
+            return jsonify({'success': False, 'error': 'Invalid image data'})
+        
+        # Detect facial landmarks
+        landmarks = detect_landmarks(image)
+        if landmarks is None:
+            return jsonify({'success': False, 'error': 'No face detected'})
+        
+        # Get emotion scores
+        scores = predict_emotion(image)
+        if 'error' in scores:
+            return jsonify({'success': False, 'error': scores['error']})
+        
+        # Find the dominant emotion
+        dominant_emotion = max(scores, key=scores.get)
+        confidence = float(scores[dominant_emotion])
+        
+        # Draw landmarks and emotion on the image
+        for i, (x, y) in enumerate(landmarks[:68]):  # Limit to key points if needed
+            cv2.circle(image, (int(x), int(y)), 2, (0, 255, 0), -1)
+        
+        # Add text with emotion
+        cv2.putText(image, f"{dominant_emotion}: {confidence:.2f}", 
+                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+        
+        # Convert the image back to base64 for sending to client
+        _, buffer = cv2.imencode('.jpg', image)
+        processed_image = base64.b64encode(buffer).decode('utf-8')
+        
+        # Save emotion to database
+        user_id = session['user_id']
+        try:
+            new_analysis = EmotionAnalysis(
+                user_id=user_id,
+                emotion=dominant_emotion,
+                confidence=confidence
+            )
+            db.session.add(new_analysis)
+            db.session.commit()
+        except Exception as db_error:
+            print(f"Database error: {db_error}")
+            # Continue even if DB fails
+        
+        # Return the processed image and results
+        return jsonify({
+            'success': True,
+            'processed_image': f'data:image/jpeg;base64,{processed_image}',
+            'emotion': dominant_emotion,
+            'confidence': confidence,
+            'scores': scores
+        })
+    
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)})
 
 @app.route('/end_session')
 def end_session():
@@ -515,20 +637,25 @@ def end_session():
         plt.savefig(img, format='png', bbox_inches='tight')
         img.seek(0)
         pie_chart_base64 = base64.b64encode(img.getvalue()).decode()
-        new_analysis = EmotionAnalysis(
-            user_id=user_id,
-            emotion=dominant_emotion,
-            confidence=max(scores.values())
-        )
-        db.session.add(new_analysis)
-        db.session.commit()
+        
+        try:
+            new_analysis = EmotionAnalysis(
+                user_id=user_id,
+                emotion=dominant_emotion,
+                confidence=float(max(scores.values()))
+            )
+            db.session.add(new_analysis)
+            db.session.commit()
+        except Exception as e:
+            print(f"Database error: {e}")
+            
         emotion_trackers[user_id].clear()
         suggestions_dict = {
-            'happy': ["Keep spreading positivity—share your joy with others! <a href='https://www.youtube.com/watch?v=X1GNc70-584' target='_blank'>Watch this podcast</a>", "Try a new hobby to maintain your high spirits.", "Reflect on what’s making you happy and how to sustain it."],
+            'happy': ["Keep spreading positivity—share your joy with others! <a href='https://www.youtube.com/watch?v=X1GNc70-584' target='_blank'>Watch this podcast</a>", "Try a new hobby to maintain your high spirits.", "Reflect on what's making you happy and how to sustain it."],
             'sad': ["Take a moment to relax—maybe watch a comforting movie. <a href='https://www.youtube.com/watch?v=h-3bixYKBFg' target='_blank'>Watch this podcast</a>", "Talk to a friend or loved one for support.", "Consider journaling your feelings to process them."],
-            'angry': ["Take deep breaths or step away to cool off. <a href='https://www.youtube.com/watch?v=J8LMUkuxkbU' target='_blank'>Watch this podcast</a>", "Engage in physical activity like a quick walk to release tension.", "Write down what’s bothering you to gain perspective."],
-            'fear': ["Focus on what you can control to ease your worries. <a href='https://www.youtube.com/watch?v=q6VRPyX1qHg' target='_blank'>Watch this podcast</a>", "Practice a grounding exercise, like counting to 10 slowly.", "Talk to someone you trust about what’s on your mind."],
-            'disgust': ["Shift your focus to something you enjoy to reset. <a href='https://www.youtube.com/watch?v=oUTEJGEGGPE' target='_blank'>Watch this podcast</a>", "Take a break from whatever’s bothering you.", "Clean or organize your space for a fresh start."],
+            'angry': ["Take deep breaths or step away to cool off. <a href='https://www.youtube.com/watch?v=J8LMUkuxkbU' target='_blank'>Watch this podcast</a>", "Engage in physical activity like a quick walk to release tension.", "Write down what's bothering you to gain perspective."],
+            'fear': ["Focus on what you can control to ease your worries. <a href='https://www.youtube.com/watch?v=q6VRPyX1qHg' target='_blank'>Watch this podcast</a>", "Practice a grounding exercise, like counting to 10 slowly.", "Talk to someone you trust about what's on your mind."],
+            'disgust': ["Shift your focus to something you enjoy to reset. <a href='https://www.youtube.com/watch?v=oUTEJGEGGPE' target='_blank'>Watch this podcast</a>", "Take a break from whatever's bothering you.", "Clean or organize your space for a fresh start."],
             'neutral': ["Try something new to spark some excitement. <a href='https://www.youtube.com/watch?v=x4JzmIZAPxs' target='_blank'>Watch this podcast</a>", "Set a small goal for the day to feel accomplished. <a href='https://www.youtube.com/watch?v=tnVMB0P-FYM' target='_blank'>Watch this podcast</a>", "Take a moment to appreciate the calm. <a href='https://www.youtube.com/watch?v=QnEVmSFJB9g' target='_blank'>Watch this podcast</a>"],
             'surprise': ["Embrace the unexpected—see where it takes you! <a href='https://www.youtube.com/watch?v=2kdvTv7jg1s' target='_blank'>Watch this podcast</a>", "Pause and assess what surprised you to stay grounded.", "Share your reaction with someone for a fun conversation."]
         }
@@ -577,11 +704,11 @@ def result():
     img.seek(0)
     pie_chart_base64 = base64.b64encode(img.getvalue()).decode()
     suggestions_dict = {
-        'happy': ["Keep spreading positivity—share your joy with others! <a href='https://www.youtube.com/watch?v=X1GNc70-584' target='_blank'>Watch this podcast</a>", "Try a new hobby to maintain your high spirits.", "Reflect on what’s making you happy and how to sustain it."],
+        'happy': ["Keep spreading positivity—share your joy with others! <a href='https://www.youtube.com/watch?v=X1GNc70-584' target='_blank'>Watch this podcast</a>", "Try a new hobby to maintain your high spirits.", "Reflect on what's making you happy and how to sustain it."],
         'sad': ["Take a moment to relax—maybe watch a comforting movie. <a href='https://www.youtube.com/watch?v=h-3bixYKBFg' target='_blank'>Watch this podcast</a>", "Talk to a friend or loved one for support.", "Consider journaling your feelings to process them."],
-        'angry': ["Take deep breaths or step away to cool off. <a href='https://www.youtube.com/watch?v=J8LMUkuxkbU' target='_blank'>Watch this podcast</a>", "Engage in physical activity like a quick walk to release tension.", "Write down what’s bothering you to gain perspective."],
-        'fear': ["Focus on what you can control to ease your worries. <a href='https://www.youtube.com/watch?v=q6VRPyX1qHg' target='_blank'>Watch this podcast</a>", "Practice a grounding exercise, like counting to 10 slowly.", "Talk to someone you trust about what’s on your mind."],
-        'disgust': ["Shift your focus to something you enjoy to reset. <a href='https://www.youtube.com/watch?v=oUTEJGEGGPE' target='_blank'>Watch this podcast</a>", "Take a break from whatever’s bothering you.", "Clean or organize your space for a fresh start."],
+        'angry': ["Take deep breaths or step away to cool off. <a href='https://www.youtube.com/watch?v=J8LMUkuxkbU' target='_blank'>Watch this podcast</a>", "Engage in physical activity like a quick walk to release tension.", "Write down what's bothering you to gain perspective."],
+        'fear': ["Focus on what you can control to ease your worries. <a href='https://www.youtube.com/watch?v=q6VRPyX1qHg' target='_blank'>Watch this podcast</a>", "Practice a grounding exercise, like counting to 10 slowly.", "Talk to someone you trust about what's on your mind."],
+        'disgust': ["Shift your focus to something you enjoy to reset. <a href='https://www.youtube.com/watch?v=oUTEJGEGGPE' target='_blank'>Watch this podcast</a>", "Take a break from whatever's bothering you.", "Clean or organize your space for a fresh start."],
         'neutral': ["Try something new to spark some excitement. <a href='https://www.youtube.com/watch?v=x4JzmIZAPxs' target='_blank'>Watch this podcast</a>", "Set a small goal for the day to feel accomplished. <a href='https://www.youtube.com/watch?v=tnVMB0P-FYM' target='_blank'>Watch this podcast</a>", "Take a moment to appreciate the calm. <a href='https://www.youtube.com/watch?v=QnEVmSFJB9g' target='_blank'>Watch this podcast</a>"],
         'surprise': ["Embrace the unexpected—see where it takes you! <a href='https://www.youtube.com/watch?v=2kdvTv7jg1s' target='_blank'>Watch this podcast</a>", "Pause and assess what surprised you to stay grounded.", "Share your reaction with someone for a fun conversation."]
     }

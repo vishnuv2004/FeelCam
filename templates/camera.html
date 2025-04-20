@@ -78,6 +78,13 @@
             transform: translateY(-2px);
             box-shadow: 0px 6px 12px rgba(0, 0, 0, 0.25);
         }
+        
+        .capture-button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
 
         .camera-instructions {
             color: #666;
@@ -123,6 +130,16 @@
             background-color: rgba(0, 0, 0, 0.5);
             z-index: 5;
         }
+        
+        .error-message {
+            display: none;
+            color: #e74c3c;
+            background-color: rgba(231, 76, 60, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            margin-top: 15px;
+            font-weight: bold;
+        }
 
         @media (max-width: 600px) {
             .camera-container {
@@ -146,6 +163,7 @@
         <div class="camera-instructions">
             Position your face in the center of the frame. Make sure your face is well-lit and clearly visible for the best results.
         </div>
+        <div class="error-message" id="errorMessage"></div>
     </div>
 
     <!-- Loading indicator -->
@@ -159,6 +177,7 @@
     const captureBtn = document.getElementById('captureBtn');
     const loading = document.getElementById('loading');
     const overlay = document.getElementById('overlay');
+    const errorMessage = document.getElementById('errorMessage');
 
     // Access the camera
     navigator.mediaDevices.getUserMedia({ video: true })
@@ -167,7 +186,9 @@
         })
         .catch((err) => {
             console.error("Error accessing the camera: ", err);
-            alert("Could not access the camera. Please ensure camera permissions are enabled.");
+            errorMessage.textContent = "Could not access the camera. Please ensure camera permissions are enabled.";
+            errorMessage.style.display = 'block';
+            captureBtn.disabled = true;
         });
 
     function capturePhoto() {
@@ -175,6 +196,7 @@
         loading.style.display = 'block';
         overlay.style.display = 'block';
         captureBtn.disabled = true;
+        errorMessage.style.display = 'none';
 
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
@@ -199,7 +221,9 @@
                 captureBtn.disabled = false;
 
                 if (data.error) {
-                    alert(data.error);
+                    // Display error message to user
+                    errorMessage.textContent = data.error;
+                    errorMessage.style.display = 'block';
                 } else {
                     window.location.href = `/result?emotion=${encodeURIComponent(data.emotion)}&scores=${encodeURIComponent(data.scores)}`;
                 }
@@ -211,7 +235,8 @@
                 captureBtn.disabled = false;
 
                 console.error('Error:', error);
-                alert("An error occurred while processing the image. Please try again.");
+                errorMessage.textContent = "An error occurred while processing the image. Please try again.";
+                errorMessage.style.display = 'block';
             });
         }, 'image/png');
     }
