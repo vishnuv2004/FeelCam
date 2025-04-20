@@ -66,6 +66,7 @@ try:
     import os
     model_path = os.path.join(os.path.dirname(__file__), "emotion_model.h5")
     model = load_model(model_path)
+    print("Model loaded successfully.")
     print(model.summary())
 except Exception as e:
     print(f"Error loading model: {e}")
@@ -356,12 +357,16 @@ def process_image():
     if landmarks is None:
         return jsonify({'error': 'No face detected'}), 400
     scores = predict_emotion(image)
+    if 'error' in scores:
+        return jsonify({'error': scores['error']}), 500  # or render a template with an error message
     dominant_emotion = max(scores, key=scores.get)
+    confidence = max(scores.values())
     new_analysis = EmotionAnalysis(user_id=session['user_id'], emotion=dominant_emotion,
-                                   confidence=max(scores.values()))
+                               confidence=confidence)
     db.session.add(new_analysis)
     db.session.commit()
-    return jsonify({
+    ({
+
         'emotion': dominant_emotion,
         'scores': json.dumps(scores)
     })
