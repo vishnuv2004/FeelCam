@@ -63,7 +63,9 @@ class EmotionAnalysis(db.Model):
 
 # Load Pretrained ML Model
 try:
-    model = load_model('emotion_model.h5')
+    import os
+    model_path = os.path.join(os.path.dirname(__file__), "emotion_model.h5")
+    model = load_model(model_path)
     print(model.summary())
 except Exception as e:
     print(f"Error loading model: {e}")
