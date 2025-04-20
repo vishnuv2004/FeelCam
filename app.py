@@ -15,12 +15,15 @@ import json
 import threading
 import time
 import logging
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)
 
 # Database Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://Administrator:Adminpassword@localhost/emotionrecognition'
+app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DB_URI")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'static/uploads'  # Folder for profile pictures
 db = SQLAlchemy(app)
