@@ -1,0 +1,11 @@
+build
+controllers
+DataKaggle
+Dlib_Windows_Python3.x-main
+instance
+model
+services
+utils
+.venv
+facial-emotion-recognition-explained-ste-b1f21d.ipynb
+.idea

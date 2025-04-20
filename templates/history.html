@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>History</title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap");
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: "Space Grotesk", sans-serif;
+      }
+
+      body {
+        min-height: 100vh;
+        background-color: #3a4750; /* Slate gray background */
+        background: linear-gradient(
+          145deg,
+          #3a4750 0%,
+          #2c373f 100%
+        ); /* Subtle gradient */
+        color: #f9f6e9; /* Cream text */
+        position: relative;
+        padding: 80px 20px 40px;
+      }
+
+      nav {
+        background: #0a3b32; /* Teal green navigation bar */
+        padding: 15px 0;
+        position: fixed;
+        width: 100%;
+        top: 0;
+        left: 0;
+        z-index: 1000;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+        border-bottom: 1px solid rgba(249, 246, 233, 0.1); /* Subtle cream border */
+      }
+
+      nav ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        justify-content: center;
+        gap: 30px;
+      }
+
+      nav a {
+        text-decoration: none;
+        color: #f9f6e9; /* Cream color */
+        font-size: 18px;
+        padding: 8px 20px;
+        border-radius: 20px;
+        transition: all 0.3s ease;
+        position: relative;
+      }
+
+      nav a:hover {
+        background: rgba(249, 246, 233, 0.15);
+        color: #ffbf00; /* Amber on hover */
+        transform: translateY(-2px);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+      }
+
+      .main-content {
+        max-width: 900px;
+        margin: 40px auto;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        position: relative;
+        z-index: 1;
+      }
+
+      h2 {
+        text-align: center;
+        margin-bottom: 30px;
+        font-size: 2.2rem;
+        font-weight: 600;
+        color: #f9f6e9; /* Cream color */
+        position: relative;
+        padding-bottom: 15px;
+      }
+
+      h2::after {
+        content: "";
+        position: absolute;
+        bottom: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 100px;
+        height: 3px;
+        background: linear-gradient(
+          90deg,
+          #ffbf00,
+          #6d2080
+        ); /* Amber to dark purple gradient */
+        border-radius: 3px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0 30px;
+        background: rgba(249, 246, 233, 0.05); /* Very light cream background */
+        border-radius: 15px;
+        overflow: hidden;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(249, 246, 233, 0.1);
+      }
+
+      thead {
+        background-color: rgba(109, 32, 128, 0.8); /* Dark purple header */
+      }
+
+      th {
+        padding: 16px 20px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 1.1rem;
+        color: #f9f6e9; /* Cream color */
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      td {
+        padding: 14px 20px;
+        border-top: 1px solid rgba(249, 246, 233, 0.1);
+        color: rgba(249, 246, 233, 0.9);
+      }
+
+      tbody tr {
+        transition: all 0.3s ease;
+      }
+
+      tbody tr:hover {
+        background-color: rgba(
+          255,
+          191,
+          0,
+          0.1
+        ); /* Very light amber highlight */
+        transform: translateX(5px);
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      /* Style for active session */
+      tbody tr td:last-child:contains("Active Session") {
+        color: #ffbf00; /* Amber color for active session */
+        font-weight: 500;
+      }
+
+      a {
+        display: inline-block;
+        text-decoration: none;
+        color: #f9f6e9;
+        background-color: #4e5a65; /* Darker slate */
+        padding: 12px 25px;
+        border-radius: 30px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        border: 1px solid rgba(249, 246, 233, 0.2);
+        margin-top: 20px;
+      }
+
+      a:hover {
+        background-color: #ffbf00; /* Amber background on hover */
+        color: #2c373f; /* Slate text on hover */
+        transform: translateY(-3px);
+        box-shadow: 0 6px 15px rgba(0, 0, 0, 0.2);
+      }
+
+      .logo {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        font-size: 1.2rem;
+        color: #f9f6e9;
+        font-weight: 600;
+        letter-spacing: -0.5px;
+        display: flex;
+        align-items: center;
+        z-index: 1001;
+      }
+
+      .logo::before {
+        content: "";
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        background-color: #ffbf00; /* Amber circle */
+        border-radius: 50%;
+        margin-right: 10px;
+      }
+
+      @media (max-width: 768px) {
+        table {
+          font-size: 0.9rem;
+        }
+
+        th,
+        td {
+          padding: 12px 15px;
+        }
+
+        h2 {
+          font-size: 1.8rem;
+        }
+
+        nav ul {
+          gap: 15px;
+        }
+
+        nav a {
+          font-size: 16px;
+          padding: 6px 15px;
+        }
+      }
+
+      @media (max-width: 480px) {
+        table {
+          font-size: 0.8rem;
+        }
+
+        th,
+        td {
+          padding: 10px;
+        }
+
+        h2 {
+          font-size: 1.5rem;
+        }
+
+        .main-content {
+          padding: 15px 10px;
+        }
+
+        nav ul {
+          gap: 10px;
+        }
+
+        nav a {
+          font-size: 14px;
+          padding: 5px 10px;
+        }
+      }
+
+      /* Additional styles from old version for emotion badges and alerts */
+      .emotion-badge {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        letter-spacing: 0.5px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        text-transform: capitalize;
+      }
+
+      .happy {
+        background: linear-gradient(135deg, #28a745, #20c997);
+        color: white;
+      }
+
+      .sad {
+        background: linear-gradient(135deg, #17a2b8, #0dcaf0);
+        color: white;
+      }
+
+      .angry {
+        background: linear-gradient(135deg, #dc3545, #ff4d5e);
+        color: white;
+      }
+
+      .fear {
+        background: linear-gradient(135deg, #ffc107, #ffca2c);
+        color: black;
+      }
+
+      .surprise {
+        background: linear-gradient(135deg, #007bff, #0d6efd);
+        color: white;
+      }
+
+      .disgust {
+        background: linear-gradient(135deg, #6c757d, #495057);
+        color: white;
+      }
+
+      .neutral {
+        background: linear-gradient(135deg, #f8f9fa, #dee2e6);
+        color: black;
+      }
+
+      .alert {
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 8px;
+        font-weight: 500;
+        width: 100%;
+      }
+
+      .alert-success {
+        background: rgba(40, 167, 69, 0.2);
+        border-left: 4px solid #28a745;
+      }
+
+      .alert-danger {
+        background: rgba(220, 53, 69, 0.2);
+        border-left: 4px solid #dc3545;
+      }
+
+      .alert-info {
+        background: rgba(23, 162, 184, 0.2);
+        border-left: 4px solid #17a2b8;
+      }
+    </style>
+</head>
+<body>
+    <nav>
+        <ul>
+            <li><a href="{{ url_for('index') }}">Home</a></li>
+            <li><a href="{{ url_for('history') }}">History</a></li>
+            <li><a href="{{ url_for('about') }}">About</a></li>
+            <li><a href="{{ url_for('contact') }}">Contact</a></li>
+        </ul>
+    </nav>
+
+    <div class="logo">Emotion History</div>
+
+    <div class="main-content">
+        <h2>Session History</h2>
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Login Time</th>
+                    <th>Logout Time</th>
+                    <th>Predominant Emotion</th>
+                    <th>Duration</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if sessions_with_emotions %}
+                    {% for session_data in sessions_with_emotions %}
+                        <tr>
+                            <td>{{ session_data.session.login_time.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td>
+                                {% if session_data.session.logout_time %}
+                                    {{ session_data.session.logout_time.strftime('%Y-%m-%d %H:%M:%S') }}
+                                {% else %}
+                                    Active Session
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="emotion-badge {{ session_data.predominant_emotion }}">
+                                    {{ session_data.predominant_emotion }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if session_data.session.logout_time %}
+                                    {{ (session_data.session.logout_time - session_data.session.login_time).total_seconds() // 60 }} minutes
+                                {% else %}
+                                    In progress
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="4">No session history found.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+
+        <h2 style="margin-top: 40px;">Recent Emotion Records</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Emotion</th>
+                    <th>Confidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if emotion_records %}
+                    {% for record in emotion_records[:10] %}
+                        <tr>
+                            <td>{{ record.timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                            <td>
+                                <span class="emotion-badge {{ record.emotion }}">
+                                    {{ record.emotion }}
+                                </span>
+                            </td>
+                            <td>{{ "%.2f"|format(record.confidence * 100) }}%</td>
+                        </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="3">No emotion records found.</td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+
+        <a href="{{ url_for('index') }}">Back to Home</a>
+    </div>
+</body>
+</html>
