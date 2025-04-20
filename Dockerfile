@@ -1,23 +1,20 @@
-# Use Python 3.9 base image
 FROM python:3.11-slim-bullseye
 
-# Install system dependencies for MediaPipe/OpenCV
+# Install system dependencies + Rust/Cargo
 RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    && rm -rf /var/lib/apt/lists/*
+    build-essential \
+    curl \
+    libssl-dev \
+    pkg-config \
+    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
+    && echo 'source $HOME/.cargo/env' >> ~/.bashrc
 
-# Set working directory
+# Ensure Rust is in PATH
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Rest of your Dockerfile...
 WORKDIR /app
-
-# Copy requirements first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
 COPY . .
-
-# Start the app with Gunicorn
 CMD ["gunicorn", "app:app", "-b", "0.0.0.0:5000"]
