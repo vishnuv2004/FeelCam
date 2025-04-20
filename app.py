@@ -4,7 +4,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
 import secrets
 import cv2
-import dlib
 import numpy as np
 from tensorflow.keras.models import load_model
 import matplotlib.pyplot as plt
@@ -17,6 +16,8 @@ import time
 import logging
 from dotenv import load_dotenv
 
+import mediapipe as mp
+
 load_dotenv()
 
 app = Flask(__name__)
@@ -25,12 +26,14 @@ app.secret_key = secrets.token_hex(32)
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DB_URI")
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = 'static/uploads'  # Folder for profile pictures
+app.config['UPLOAD_FOLDER'] = 'static/uploads'
 db = SQLAlchemy(app)
 
-# Ensure the upload folder exists
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
+
+if not os.path.exists('static'):
+    os.makedirs('static')
 
 # User Model
 class User(db.Model):
@@ -39,9 +42,8 @@ class User(db.Model):
     username = db.Column(db.String(50), nullable=False, unique=True)
     email = db.Column(db.String(100), nullable=False, unique=True)
     password = db.Column(db.String(1023), nullable=False)
-    profile_pic = db.Column(db.String(120), default='defaultprofile.jpg')  # Default profile picture
+    profile_pic = db.Column(db.String(120), default='defaultprofile.jpg')
 
-# Session History Model
 class SessionHistory(db.Model):
     __tablename__ = 'session_history'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -50,7 +52,6 @@ class SessionHistory(db.Model):
     logout_time = db.Column(db.DateTime, nullable=True)
     user = db.relationship('User', backref=db.backref('sessions', lazy=True))
 
-# Emotion Analysis Model
 class EmotionAnalysis(db.Model):
     __tablename__ = 'emotion_analysis'
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
@@ -60,35 +61,29 @@ class EmotionAnalysis(db.Model):
     confidence = db.Column(db.Float, nullable=False)
     user = db.relationship('User', backref=db.backref('emotions', lazy=True))
 
-# Make sure the static folder exists
-if not os.path.exists('static'):
-    os.makedirs('static')
-
 # Load Pretrained ML Model
 try:
     model = load_model('D:/SoftwareEngineering/emotion_model.h5')
     print(model.summary())
-    detector = dlib.get_frontal_face_detector()
-    predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
 except Exception as e:
-    print(f"Error loading models: {e}")
+    print(f"Error loading model: {e}")
     model = None
-    detector = None
-    predictor = None
 
-# Function to detect facial landmarks
+# Function to detect facial landmarks using MediaPipe
 def detect_landmarks(image):
-    if detector is None or predictor is None:
+    mp_face_mesh = mp.solutions.face_mesh
+    with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1) as face_mesh:
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        results = face_mesh.process(rgb_image)
+        if results.multi_face_landmarks:
+            h, w, _ = image.shape
+            landmarks = []
+            for lm in results.multi_face_landmarks[0].landmark:
+                x, y = int(lm.x * w), int(lm.y * h)
+                landmarks.append([x, y])
+            return np.array(landmarks)
         return None
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    faces = detector(gray)
-    for face in faces:
-        landmarks = predictor(gray, face)
-        points = np.array([[p.x, p.y] for p in landmarks.parts()])
-        return points
-    return None
 
-# Function to predict emotion
 def predict_emotion(image):
     if model is None:
         return {'error': 'Model not loaded'}
@@ -98,7 +93,6 @@ def predict_emotion(image):
     emotion_labels = ['angry', 'disgust', 'fear', 'happy', 'neutral', 'sad', 'surprise']
     return {emotion_labels[i]: float(prediction[i]) for i in range(len(emotion_labels))}
 
-# Setup for video streaming and emotion tracking
 class EmotionTracker:
     def __init__(self):
         self.emotions = []
@@ -123,16 +117,15 @@ class EmotionTracker:
 
 emotion_trackers = {}
 
-# Routes
 @app.route('/')
 def default():
-    return redirect(url_for('about'))  # Set default page to about
+    return redirect(url_for('about'))
 
 @app.route('/about')
 def about():
     if 'user_id' not in session:
         return render_template('about.html')
-    return redirect(url_for('login'))  # Redirect to login if already logged in
+    return redirect(url_for('login'))
 
 @app.route('/index')
 def index():
@@ -299,24 +292,21 @@ def update_profile():
 
     username = request.form.get('username')
     email = request.form.get('email')
-    password = request.form.get('password')  # New field for password update
+    password = request.form.get('password')
 
-    # Check for duplicate username or email (excluding current user)
     existing_user = User.query.filter(
         ((User.username == username) | (User.email == email)) & (User.id != user.id)
     ).first()
     if existing_user:
         return jsonify({'success': False, 'message': 'Username or email already exists'}), 400
 
-    # Update user details
     if username:
         user.username = username
     if email:
         user.email = email
-    if password:  # Update password if provided
+    if password:
         user.password = generate_password_hash(password)
 
-    # Handle profile picture upload
     if 'profile-pic-upload' in request.files:
         file = request.files['profile-pic-upload']
         if file and file.filename:
@@ -386,7 +376,6 @@ def videoscan():
         return redirect(url_for('login'))
     return render_template('videoscan.html')
 
-# Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -485,11 +474,7 @@ def video_feed():
                         (0, 255, 0),
                         2
                     )
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                faces = detector(gray)
-                for face in faces:
-                    x1, y1, x2, y2 = face.left(), face.top(), face.right(), face.bottom()
-                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                # NO landmark drawing code here!
                 ret, jpeg = cv2.imencode('.jpg', frame)
                 frame_bytes = jpeg.tobytes()
                 yield (b'--frame\r\n'
