@@ -1,36 +1,22 @@
-# Core ML and CV
+Flask==3.1.0
+Flask-SQLAlchemy==3.1.1
+Werkzeug==3.1.3
+Jinja2==3.1.5
+itsdangerous==2.2.0
+python-dotenv==1.0.1
+gunicorn==23.0.0
+
+numpy==1.26.4
+opencv-python-headless==4.11.0.86
+mediapipe==0.10.21
 tensorflow==2.16.1
 keras==3.0.1
 ml-dtypes==0.3.1
-mediapipe==0.10.9
-opencv-python-headless==4.9.0.80
-numpy==1.26.4
-scipy==1.12.0
 matplotlib==3.8.4
 contourpy==1.2.1
-
-# Flask and extensions
-Flask==3.0.2
-Flask-SQLAlchemy==3.1.1
-gunicorn==21.2.0
-python-dotenv==1.0.1
-
-# Utilities and extras
-Werkzeug==3.1.3
-itsdangerous==2.2.0
-Jinja2==3.1.5
-
-# For image and data handling
 pillow==10.2.0
-h5py==3.12.0
-
-# If you use pandas for data analysis/history
-pandas==2.2.2
-
-# If you use threading, logging, or base64, these are in Python stdlib (no need to list)
-
-# If you use SQLAlchemy directly (not just Flask-SQLAlchemy)
-SQLAlchemy==2.0.29
-
-# Remove Windows-only and unnecessary/conflicting packages:
-# - pywin32, pywinpty, tensorflow-intel, jax, jaxlib, tensorflow-cpu, etc.
+h5py==3.12.1
+scipy==1.12.0
+scikit-learn==1.4.2
+SQLAlchemy==2.0.38
+pandas==2.2.3
