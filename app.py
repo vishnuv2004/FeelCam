@@ -62,15 +62,41 @@ class EmotionAnalysis(db.Model):
     confidence = db.Column(db.Float, nullable=False)
     user = db.relationship('User', backref=db.backref('emotions', lazy=True))
 
-# Load Pretrained ML Model
+import os
+import gdown
+from tensorflow.keras.models import load_model
+
+# Define model file and path
+MODEL_DIR = "Feelcam"
+MODEL_FILENAME = "emotion_model.keras"
+MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILENAME)
+
+# Google Drive file ID (replace with your actual ID)
+FILE_ID = "1CyMC8bZbujrxuYhnWie93idIxsSyhQP4"
+DOWNLOAD_URL = f"https://drive.google.com/uc?id={FILE_ID}"
+
+
+# Ensure the model directory exists
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+# Download the model if it's not already present
+if not os.path.exists(MODEL_PATH):
+    print("⬇Downloading model from Google Drive...")
+    try:
+        gdown.download(DOWNLOAD_URL, MODEL_PATH, quiet=False)
+        print("Download complete.")
+    except Exception as download_error:
+        print(f"Failed to download model: {download_error}")
+
+# Load the model
 try:
-    # Use relative path with os.path for cross-platform compatibility
-    model = load_model("Feelcam/emotion_model.keras")
+    model = load_model(MODEL_PATH)
     print("Model loaded successfully.")
     print(model.summary())
 except Exception as e:
     print(f"Error loading model: {e}")
     model = None
+
 
 # Global lock for MediaPipe (thread safety)
 mp_lock = threading.Lock()
