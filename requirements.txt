@@ -5,7 +5,7 @@ Jinja2==3.1.5
 itsdangerous==2.2.0
 python-dotenv==1.0.1
 gunicorn==23.0.0
-
+gdown
 numpy==1.26.4
 opencv-python-headless==4.11.0.86
 mediapipe==0.10.21
