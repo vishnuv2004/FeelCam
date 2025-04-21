@@ -65,7 +65,8 @@ class EmotionAnalysis(db.Model):
 # Load Pretrained ML Model
 try:
     # Use relative path with os.path for cross-platform compatibility
-    model = load_model('emotion_model.h5')
+    model_path = os.path.join(os.path.dirname(__file__), "emotion_model.keras")
+    model = load_model(model_path)
     print("Model loaded successfully.")
     print(model.summary())
 except Exception as e:
