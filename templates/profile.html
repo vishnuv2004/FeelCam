@@ -270,19 +270,23 @@
         width: 36px;
         height: 36px;
         border-radius: 50%;
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(0, 97, 88, 0.15);
         cursor: pointer;
         transition: all 0.3s ease;
+        position: fixed;
+        top: 30px;
+        right: 40px;
+        z-index: 1050;
       }
 
       .human-icon:hover {
-        background: rgba(255, 255, 255, 0.3);
+        background: rgba(0, 97, 88, 0.25);
       }
 
       .human-icon svg {
         width: 18px;
         height: 18px;
-        color: white;
+        color: var(--teal-green);
       }
 
       .human-list {
@@ -309,6 +313,8 @@
 
       .human-list ul {
         list-style: none;
+        margin: 0;
+        padding: 0;
       }
 
       .human-list li {
@@ -328,6 +334,24 @@
         display: block;
       }
 
+      .back-home-btn {
+        display: inline-block;
+        background-color: var(--teal-green);
+        color: #fff;
+        padding: 12px 28px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-size: 16px;
+        font-weight: 500;
+        margin-top: 32px;
+        box-shadow: 0 3px 10px rgba(0, 97, 88, 0.15);
+        transition: background 0.2s, transform 0.2s;
+      }
+      .back-home-btn:hover {
+        background-color: var(--accent-color);
+        transform: translateY(-2px);
+      }
+
       @media (max-width: 768px) {
         .profile-section {
           grid-template-columns: 1fr;
@@ -345,6 +369,11 @@
 
         #edit-form {
           width: 90%;
+        }
+
+        .human-icon {
+          top: 20px;
+          right: 10px;
         }
       }
     </style>
@@ -409,6 +438,10 @@
           </div>
         </div>
       </div>
+      <!-- Back to Home Button -->
+      <div style="text-align:center;">
+        <a href="{{ url_for('index') }}" class="back-home-btn">← Back to Home</a>
+      </div>
     </div>
 
     <section id="edit-form">
@@ -435,27 +468,6 @@
       </form>
     </section>
 
-    <div id="overlay"></div>
-
-    <div class="human-icon">
-        <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-        >
-            <path
-                d="M12 2c2.76 0 5 2.24 5 5s-2.24 5-5 5-5-2.24-5-5 2.24-5 5-5zm0 14c-3.31 0-6 2.69-6 6h12c0-3.31-2.69-6-6-6z"
-            />
-        </svg>
-    </div>
-
-    <div class="human-list">
-        <ul>
-            <li><a href="{{ url_for('show_profile') }}">Profile</a></li>
-            <li>Settings</li>
-            <li><a href="{{ url_for('logout') }}">Logout</a></li>
-        </ul>
-    </div>
 
     <script>
       const humanIcon = document.querySelector('.human-icon');

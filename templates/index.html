@@ -89,19 +89,6 @@
             gap: 20px;
         }
 
-        .lang-selector {
-            display: flex;
-            align-items: center;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 30px;
-            padding: 5px 15px;
-            cursor: pointer;
-        }
-
-        .lang-selector svg {
-            margin-right: 5px;
-        }
-
         .main-content {
             display: flex;
             flex-direction: row;
@@ -378,28 +365,6 @@
             display: block;
         }
 
-        .help-button {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: #006158;
-            color: white;
-            border: none;
-            border-radius: 30px;
-            padding: 10px 20px;
-            font-size: 14px;
-            font-weight: 500;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-            cursor: pointer;
-            transition: all 0.3s;
-            z-index: 100;
-        }
-
-        .help-button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
-        }
-
         @media (max-width: 900px) {
             .main-content {
                 flex-direction: column;
@@ -475,19 +440,10 @@
             <ul>
                 <li><a href="{{ url_for('index') }}">Home</a></li>
                 <li><a href="{{ url_for('history') }}">History</a></li>
-                <li><a href="{{ url_for('about') }}">About</a></li>
                 <li><a href="{{ url_for('contact') }}">Contact</a></li>
             </ul>
         </div>
         <div class="nav-right">
-            <div class="lang-selector">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                    <path
-                        d="M8 0C3.6 0 0 3.6 0 8s3.6 8 8 8 8-3.6 8-8-3.6-8-8-8zm5.4 4.2h-2.2c-.2-.9-.5-1.7-.9-2.4 1.4.3 2.6 1.2 3.1 2.4zM8 2c.5 0 1.1.9 1.5 2.2H6.5C6.9 2.9 7.5 2 8 2zm-6.4 6c-.1-.3-.1-.7-.1-1s0-.7.1-1h2.5c-.1.3-.1.7-.1 1s0 .7.1 1H1.6zm.9 2h2.2c.2.9.5 1.7.9 2.4-1.4-.3-2.6-1.2-3.1-2.4zm2.2-6H2.5c.5-1.2 1.7-2.1 3.1-2.4-.4.7-.7 1.5-.9 2.4zM8 14c-.5 0-1.1-.9-1.5-2.2h3C9.1 13.1 8.5 14 8 14zm1.8-4.2H6.2c-.1-.3-.1-.7-.1-1s0-.7.1-1h3.6c.1.3.1.7.1 1s0 .7-.1 1zm.3 4.6c.4-.7.7-1.5.9-2.4h2.2c-.5 1.2-1.7 2.1-3.1 2.4zm1.1-4.6c.1-.3.1-.7.1-1s0-.7-.1-1h2.5c.1.3.1.7.1 1s0 .7-.1 1h-2.5z"
-                    />
-                </svg>
-                EN
-            </div>
             <div class="human-icon">
                 <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -504,8 +460,7 @@
 
     <div class="human-list">
         <ul>
-            <li><a href="{{ url_for('show_profile') }}">Profile</a></li> <!-- Updated to show_profile -->
-            <li>Settings</li>
+            <li><a href="{{ url_for('show_profile') }}">Profile</a></li>
             <li><a href="{{ url_for('logout') }}">Logout</a></li>
         </ul>
     </div>
@@ -567,8 +522,8 @@
                     <div class="about-text">
                         FeelCam is a cutting-edge emotion recognition platform that uses
                         advanced AI algorithms to detect and analyze facial expressions in
-                        real-time. Our technology can identify 7+ different emotional
-                        states with 99.8% accuracy, making it perfect for market research,
+                        real-time. Our technology can identify 7 different emotional
+                        states with good accuracy, making it perfect for market research,
                         UX testing, security applications, and mental health monitoring.
                         FeelCam works across all demographics and can process images and
                         video in less than half a second, providing instant insights into
@@ -578,15 +533,11 @@
 
                 <div class="tech-specs">
                     <div class="tech-spec">
-                        <div class="tech-spec-value">99.8%</div>
-                        <div class="tech-spec-label">ACCURACY</div>
-                    </div>
-                    <div class="tech-spec">
                         <div class="tech-spec-value"><0.5s</div>
                         <div class="tech-spec-label">PROCESSING</div>
                     </div>
                     <div class="tech-spec">
-                        <div class="tech-spec-value">7+</div>
+                        <div class="tech-spec-value">7</div>
                         <div class="tech-spec-label">EMOTIONS</div>
                     </div>
                     <div class="tech-spec">
@@ -597,8 +548,6 @@
             </div>
         </div>
     </div>
-
-    <div class="help-button">Any questions?</div>
 
     <script>
         const humanIcon = document.querySelector(".human-icon");

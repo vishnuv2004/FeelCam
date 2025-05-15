@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, flash, jsonify, Response
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
+from datetime import datetime, timedelta
 import secrets
 import cv2
 import numpy as np
@@ -16,13 +16,13 @@ import time
 import logging
 import re
 from dotenv import load_dotenv
-
 import mediapipe as mp
 
 load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(32)
+app.permanent_session_lifetime = timedelta(days=1) 
 
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv("DB_URI")
@@ -51,6 +51,9 @@ class SessionHistory(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     login_time = db.Column(db.DateTime, default=db.func.now())
     logout_time = db.Column(db.DateTime, nullable=True)
+    remember_me = db.Column(db.Boolean, default=False)
+    session_token = db.Column(db.String(64), unique=True)
+    expires_at = db.Column(db.DateTime, nullable=True)
     user = db.relationship('User', backref=db.backref('sessions', lazy=True))
 
 class EmotionAnalysis(db.Model):
@@ -62,41 +65,14 @@ class EmotionAnalysis(db.Model):
     confidence = db.Column(db.Float, nullable=False)
     user = db.relationship('User', backref=db.backref('emotions', lazy=True))
 
-import os
-import gdown
-from tensorflow.keras.models import load_model
-
-# Define model file and path
-MODEL_DIR = "Feelcam"
-MODEL_FILENAME = "emotion_model.keras"
-MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILENAME)
-
-# Google Drive file ID (replace with your actual ID)
-FILE_ID = "1CyMC8bZbujrxuYhnWie93idIxsSyhQP4"
-DOWNLOAD_URL = f"https://drive.google.com/uc?id={FILE_ID}"
-
-
-# Ensure the model directory exists
-os.makedirs(MODEL_DIR, exist_ok=True)
-
-# Download the model if it's not already present
-if not os.path.exists(MODEL_PATH):
-    print("⬇Downloading model from Google Drive...")
-    try:
-        gdown.download(DOWNLOAD_URL, MODEL_PATH, quiet=False)
-        print("Download complete.")
-    except Exception as download_error:
-        print(f"Failed to download model: {download_error}")
-
 # Load the model
 try:
-    model = load_model(MODEL_PATH)
+    model = load_model("emotion_model.keras")
     print("Model loaded successfully.")
     print(model.summary())
 except Exception as e:
     print(f"Error loading model: {e}")
     model = None
-
 
 # Global lock for MediaPipe (thread safety)
 mp_lock = threading.Lock()
@@ -104,7 +80,7 @@ mp_lock = threading.Lock()
 # Function to detect facial landmarks using MediaPipe
 def detect_landmarks(image):
     mp_face_mesh = mp.solutions.face_mesh
-    with mp_lock:  # Thread safety for MediaPipe
+    with mp_lock:
         with mp_face_mesh.FaceMesh(static_image_mode=True, max_num_faces=1) as face_mesh:
             rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             results = face_mesh.process(rgb_image)
@@ -117,6 +93,25 @@ def detect_landmarks(image):
                 return np.array(landmarks)
             return None
 
+# Function to detect faces using MediaPipe (for bounding boxes)
+def detect_faces(image):
+    mp_face_detection = mp.solutions.face_detection
+    with mp_lock:
+        with mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5) as face_detection:
+            rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = face_detection.process(rgb_image)
+            faces = []
+            if results.detections:
+                h, w, _ = image.shape
+                for detection in results.detections:
+                    bbox = detection.location_data.relative_bounding_box
+                    x1 = int(bbox.xmin * w)
+                    y1 = int(bbox.ymin * h)
+                    x2 = int((bbox.xmin + bbox.width) * w)
+                    y2 = int((bbox.ymin + bbox.height) * h)
+                    faces.append((x1, y1, x2, y2))
+            return faces
+
 def predict_emotion(image):
     if model is None:
         return {'error': 'Model not loaded'}
@@ -128,29 +123,54 @@ def predict_emotion(image):
 
 class EmotionTracker:
     def __init__(self):
-        self.emotions = []
+        self.emotion_scores = []
         self.lock = threading.Lock()
-    def add_emotion(self, emotion, confidence, timestamp=None):
+    
+    def add_emotion(self, scores):
         with self.lock:
-            if timestamp is None:
-                timestamp = datetime.now()
-            self.emotions.append((emotion, confidence, timestamp))
+            self.emotion_scores.append((scores, datetime.now()))
+    
     def get_results(self):
         with self.lock:
-            if not self.emotions:
+            if not self.emotion_scores:
                 return "neutral", {"neutral": 1.0}
-            emotion_counts = {}
-            for emotion, _, _ in self.emotions:
-                emotion_counts[emotion] = emotion_counts.get(emotion, 0) + 1
-            total = len(self.emotions)
-            emotion_percentages = {emotion: count / total for emotion, count in emotion_counts.items()}
+            emotion_totals = {}
+            for scores, _ in self.emotion_scores:
+                for emotion, score in scores.items():
+                    if score > 0:
+                        emotion_totals[emotion] = emotion_totals.get(emotion, 0) + score
+            total_score = sum(emotion_totals.values())
+            if total_score == 0:
+                return "neutral", {"neutral": 1.0}
+            emotion_percentages = {emotion: (score / total_score) * 100 for emotion, score in emotion_totals.items()}
             dominant_emotion = max(emotion_percentages, key=emotion_percentages.get)
             return dominant_emotion, emotion_percentages
+    
     def clear(self):
         with self.lock:
-            self.emotions = []
+            self.emotion_scores = []
 
 emotion_trackers = {}
+
+# Session validation middleware
+@app.before_request
+def validate_session():
+    if 'session_token' in session and 'user_id' in session:
+        session_record = SessionHistory.query.filter_by(
+            user_id=session['user_id'], 
+            session_token=session['session_token'],
+            logout_time=None
+        ).first()
+        if not session_record:
+            session.clear()
+            flash('Your session is invalid. Please log in again.', 'warning')
+            return redirect(url_for('login'))
+        if session_record.expires_at and datetime.now() > session_record.expires_at:
+            session_record.logout_time = datetime.now()
+            db.session.commit()
+            session.clear()
+            flash('Your session has expired. Please log in again.', 'warning')
+            return redirect(url_for('login'))
 
 @app.route('/')
 def default():
@@ -173,13 +193,27 @@ def login():
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
+        remember_me = 'remember_me' in request.form
         user = User.query.filter_by(email=email).first()
         if user and check_password_hash(user.password, password):
+            # Clear any existing sessions for this user
+            SessionHistory.query.filter_by(user_id=user.id, logout_time=None).update({'logout_time': datetime.now()})
+            db.session.commit()
+
             session['user_id'] = user.id
             session['username'] = user.username
-            new_session = SessionHistory(user_id=user.id)
+            session['session_token'] = secrets.token_hex(32)
+            session.permanent = remember_me
+            expires_at = datetime.now() + timedelta(days=1) if remember_me else None
+            new_session = SessionHistory(
+                user_id=user.id,
+                remember_me=remember_me,
+                session_token=session['session_token'],
+                expires_at=expires_at
+            )
             db.session.add(new_session)
             db.session.commit()
+            flash('Login successful!', 'success')
             return redirect(url_for('index'))
         flash('Invalid email or password', 'danger')
     return render_template('login.html')
@@ -217,13 +251,60 @@ def privacy():
 def logout():
     if 'user_id' in session:
         user_id = session['user_id']
-        last_session = SessionHistory.query.filter_by(user_id=user_id, logout_time=None).order_by(
-            SessionHistory.login_time.desc()).first()
-        if last_session:
-            last_session.logout_time = datetime.now()
+        session_token = session.get('session_token')
+        session_record = SessionHistory.query.filter_by(
+            user_id=user_id, 
+            session_token=session_token,
+            logout_time=None
+        ).first()
+        if session_record:
+            session_record.logout_time = datetime.now()
             db.session.commit()
         session.clear()
+        flash('You have been logged out.', 'success')
     return redirect(url_for('login'))
+
+@app.route('/cleanup_sessions')
+def cleanup_sessions():
+    expired_sessions = SessionHistory.query.filter(
+        SessionHistory.logout_time.is_(None),
+        SessionHistory.expires_at.isnot(None),
+        SessionHistory.expires_at < datetime.now()
+    ).all()
+    count = 0
+    for session_record in expired_sessions:
+        session_record.logout_time = datetime.now()
+        count += 1
+    db.session.commit()
+    return jsonify({'success': True, 'message': f'Cleaned up {count} expired sessions'})
+
+@app.route('/invalidate_session', methods=['POST'])
+def invalidate_session():
+    if 'user_id' in session and 'session_token' in session:
+        session_record = SessionHistory.query.filter_by(
+            user_id=session['user_id'],
+            session_token=session['session_token'],
+            logout_time=None
+        ).first()
+        if session_record and not session_record.remember_me:
+            session_record.logout_time = datetime.now()
+            db.session.commit()
+            session.clear()
+            return jsonify({'success': True, 'message': 'Session invalidated'})
+    return jsonify({'success': False, 'message': 'No active session'})
+
+@app.route('/heartbeat', methods=['POST'])
+def heartbeat():
+    if 'user_id' in session and 'session_token' in session:
+        session_record = SessionHistory.query.filter_by(
+            user_id=session['user_id'],
+            session_token=session['session_token'],
+            logout_time=None
+        ).first()
+        if session_record and not session_record.remember_me:
+            return jsonify({'success': True})
+    session.clear()
+    return jsonify({'success': False, 'message': 'Session expired'})
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
@@ -379,8 +460,20 @@ def update_profile():
         'profile_pic': url_for('static', filename=user.profile_pic)
     })
 
-@app.route('/contact')
+@app.route('/contact', methods=['GET', 'POST'])
 def contact():
+    if request.method == 'POST':
+        # Extract form data (optional)
+        name = request.form.get('name')
+        email = request.form.get('email')
+        message = request.form.get('message')
+        
+        # Flash a success message
+        flash('Thank you for your message! We will get back to you soon.', 'success')
+        
+        # Redirect to the same page to avoid form resubmission on refresh
+        return redirect(url_for('contact'))
+        
     return render_template('contact.html')
 
 @app.route('/process_image', methods=['POST'])
@@ -492,19 +585,14 @@ def process_upload():
         flash(f'Error processing image: {str(e)}', 'danger')
         return redirect(url_for('upload'))
 
-# Note: This function only works locally, not on cloud deployments
 @app.route('/video_feed')
 def video_feed():
-    # For cloud deployment, redirect to browser-based camera
-    is_cloud = os.environ.get('RENDER') or ('onrender.com' in request.host)
-    if is_cloud:
-        return redirect(url_for('videoscan'))
-        
     if 'user_id' not in session:
         return redirect(url_for('login'))
     user_id = session['user_id']
     if user_id not in emotion_trackers:
         emotion_trackers[user_id] = EmotionTracker()
+    
     def generate():
         cap = cv2.VideoCapture(0)
         if not cap.isOpened():
@@ -521,10 +609,10 @@ def video_feed():
                 if current_time - last_emotion_time > emotion_interval:
                     emotion_scores = predict_emotion(frame)
                     if 'error' not in emotion_scores:
+                        emotion_trackers[user_id].add_emotion(emotion_scores)
                         dominant_emotion = max(emotion_scores, key=emotion_scores.get)
                         confidence = emotion_scores[dominant_emotion]
-                        emotion_trackers[user_id].add_emotion(dominant_emotion, confidence)
-                        if len(emotion_trackers[user_id].emotions) % 5 == 0:
+                        if len(emotion_trackers[user_id].emotion_scores) % 5 == 0:
                             with app.app_context():
                                 new_analysis = EmotionAnalysis(
                                     user_id=user_id,
@@ -543,18 +631,9 @@ def video_feed():
                         (0, 255, 0),
                         2
                     )
-                # Draw bounding box using landmarks
-                if landmarks is not None:
-                    try:
-                        # Just draw a rectangle around the face
-                        x_min = min(landmarks[:, 0])
-                        y_min = min(landmarks[:, 1])
-                        x_max = max(landmarks[:, 0])
-                        y_max = max(landmarks[:, 1])
-                        cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-                    except:
-                        pass
-                        
+                faces = detect_faces(frame)
+                for (x1, y1, x2, y2) in faces:
+                    cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 ret, jpeg = cv2.imencode('.jpg', frame)
                 frame_bytes = jpeg.tobytes()
                 yield (b'--frame\r\n'
@@ -565,58 +644,47 @@ def video_feed():
             cap.release()
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-# Add new route for browser-based frame processing for cloud
 @app.route('/process_frame', methods=['POST'])
 def process_frame():
     if 'user_id' not in session:
         return jsonify({'success': False, 'error': 'Not logged in'}), 401
     
     try:
-        # Get the image data from the request
         data = request.get_json()
         img_data = data.get('image', '')
-        
-        # Remove the header from the base64 string
         img_data = re.sub('^data:image/.+;base64,', '', img_data)
-        
-        # Decode the base64 string
         img_bytes = base64.b64decode(img_data)
         img_array = np.frombuffer(img_bytes, dtype=np.uint8)
-        
-        # Decode the image using OpenCV
         image = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
         
         if image is None:
             return jsonify({'success': False, 'error': 'Invalid image data'})
         
-        # Detect facial landmarks
         landmarks = detect_landmarks(image)
         if landmarks is None:
             return jsonify({'success': False, 'error': 'No face detected'})
         
-        # Get emotion scores
         scores = predict_emotion(image)
         if 'error' in scores:
             return jsonify({'success': False, 'error': scores['error']})
         
-        # Find the dominant emotion
         dominant_emotion = max(scores, key=scores.get)
         confidence = float(scores[dominant_emotion])
         
-        # Draw landmarks and emotion on the image
-        for i, (x, y) in enumerate(landmarks[:68]):  # Limit to key points if needed
-            cv2.circle(image, (int(x), int(y)), 2, (0, 255, 0), -1)
-        
-        # Add text with emotion
-        cv2.putText(image, f"{dominant_emotion}: {confidence:.2f}", 
+        faces = detect_faces(image)
+        for (x1, y1, x2, y2) in faces:
+            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(image, f"Emotion: {dominant_emotion} ({confidence:.2f})", 
                    (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
         
-        # Convert the image back to base64 for sending to client
         _, buffer = cv2.imencode('.jpg', image)
         processed_image = base64.b64encode(buffer).decode('utf-8')
         
-        # Save emotion to database
         user_id = session['user_id']
+        if user_id not in emotion_trackers:
+            emotion_trackers[user_id] = EmotionTracker()
+        emotion_trackers[user_id].add_emotion(scores)
+        
         try:
             new_analysis = EmotionAnalysis(
                 user_id=user_id,
@@ -627,9 +695,7 @@ def process_frame():
             db.session.commit()
         except Exception as db_error:
             print(f"Database error: {db_error}")
-            # Continue even if DB fails
         
-        # Return the processed image and results
         return jsonify({
             'success': True,
             'processed_image': f'data:image/jpeg;base64,{processed_image}',
@@ -662,25 +728,20 @@ def end_session():
         plt.savefig(img, format='png', bbox_inches='tight')
         img.seek(0)
         pie_chart_base64 = base64.b64encode(img.getvalue()).decode()
-        
-        try:
-            new_analysis = EmotionAnalysis(
-                user_id=user_id,
-                emotion=dominant_emotion,
-                confidence=float(max(scores.values()))
-            )
-            db.session.add(new_analysis)
-            db.session.commit()
-        except Exception as e:
-            print(f"Database error: {e}")
-            
+        new_analysis = EmotionAnalysis(
+            user_id=user_id,
+            emotion=dominant_emotion,
+            confidence=max(scores.values()) / 100
+        )
+        db.session.add(new_analysis)
+        db.session.commit()
         emotion_trackers[user_id].clear()
         suggestions_dict = {
-            'happy': ["Keep spreading positivity—share your joy with others! <a href='https://www.youtube.com/watch?v=X1GNc70-584' target='_blank'>Watch this podcast</a>", "Try a new hobby to maintain your high spirits.", "Reflect on what's making you happy and how to sustain it."],
+            'happy': ["Keep spreading positivity—share your joy with others! <a href='https://www.youtube.com/watch?v=X1GNc70-584' target='_blank'>Watch this podcast</a>", "Try a new hobby to maintain your high spirits.", "Reflect on what’s making you happy and how to sustain it."],
             'sad': ["Take a moment to relax—maybe watch a comforting movie. <a href='https://www.youtube.com/watch?v=h-3bixYKBFg' target='_blank'>Watch this podcast</a>", "Talk to a friend or loved one for support.", "Consider journaling your feelings to process them."],
-            'angry': ["Take deep breaths or step away to cool off. <a href='https://www.youtube.com/watch?v=J8LMUkuxkbU' target='_blank'>Watch this podcast</a>", "Engage in physical activity like a quick walk to release tension.", "Write down what's bothering you to gain perspective."],
-            'fear': ["Focus on what you can control to ease your worries. <a href='https://www.youtube.com/watch?v=q6VRPyX1qHg' target='_blank'>Watch this podcast</a>", "Practice a grounding exercise, like counting to 10 slowly.", "Talk to someone you trust about what's on your mind."],
-            'disgust': ["Shift your focus to something you enjoy to reset. <a href='https://www.youtube.com/watch?v=oUTEJGEGGPE' target='_blank'>Watch this podcast</a>", "Take a break from whatever's bothering you.", "Clean or organize your space for a fresh start."],
+            'angry': ["Take deep breaths or step away to cool off. <a href='https://www.youtube.com/watch?v=J8LMUkuxkbU' target='_blank'>Watch this podcast</a>", "Engage in physical activity like a quick walk to release tension.", "Write down what’s bothering you to gain perspective."],
+            'fear': ["Focus on what you can control to ease your worries. <a href='https://www.youtube.com/watch?v=q6VRPyX1qHg' target='_blank'>Watch this podcast</a>", "Practice a grounding exercise, like counting to 10 slowly.", "Talk to someone you trust about what’s on your mind."],
+            'disgust': ["Shift your focus to something you enjoy to reset. <a href='https://www.youtube.com/watch?v=oUTEJGEGGPE' target='_blank'>Watch this podcast</a>", "Take a break from whatever’s bothering you.", "Clean or organize your space for a fresh start."],
             'neutral': ["Try something new to spark some excitement. <a href='https://www.youtube.com/watch?v=x4JzmIZAPxs' target='_blank'>Watch this podcast</a>", "Set a small goal for the day to feel accomplished. <a href='https://www.youtube.com/watch?v=tnVMB0P-FYM' target='_blank'>Watch this podcast</a>", "Take a moment to appreciate the calm. <a href='https://www.youtube.com/watch?v=QnEVmSFJB9g' target='_blank'>Watch this podcast</a>"],
             'surprise': ["Embrace the unexpected—see where it takes you! <a href='https://www.youtube.com/watch?v=2kdvTv7jg1s' target='_blank'>Watch this podcast</a>", "Pause and assess what surprised you to stay grounded.", "Share your reaction with someone for a fun conversation."]
         }

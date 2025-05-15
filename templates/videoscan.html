@@ -225,7 +225,6 @@
         }
       }
 
-      /* Added styles from old version for session info and emotion stats */
       .session-info {
         background: rgba(255, 255, 255, 0.05);
         padding: 15px 20px;
@@ -382,7 +381,7 @@
       let isCapturing = false;
       let captureInterval = null;
       let emotionsData = {};
-      const FPS = 3; // Frames per second to capture (reduced to avoid overloading)
+      const FPS = 10; // Increased to capture brief emotions
       
       // Session timer
       let seconds = 0;
@@ -407,7 +406,7 @@
           processedImage.style.display = 'none';
           errorMessage.style.display = 'none';
           
-          // Start capturing frames at specified FPS
+          // Start capturing frames
           captureInterval = setInterval(captureFrame, 1000 / FPS);
           
           // Start the timer
@@ -501,7 +500,7 @@
             // Store emotion data
             emotionsData = data.scores;
             
-            // Update emotion pills
+            // Update emotion pills with all emotions
             updateEmotionStats(data.emotion, data.scores);
           } else if (data.error) {
             console.error('Error processing frame:', data.error);
@@ -520,22 +519,14 @@
       function updateEmotionStats(dominantEmotion, scores) {
         emotionStats.innerHTML = '';
         
-        // If scores is a string (JSON), parse it
-        if (typeof scores === 'string') {
-          try {
-            scores = JSON.parse(scores);
-          } catch (e) {
-            console.error('Error parsing scores:', e);
-            return;
-          }
-        }
-        
-        // Add pills for each emotion
+        // Display all emotions with non-zero scores
         Object.entries(scores).forEach(([emotion, value]) => {
-          const pill = document.createElement('div');
-          pill.className = 'emotion-pill';
-          pill.textContent = `${emotion}: ${(value * 100).toFixed(1)}%`;
-          emotionStats.appendChild(pill);
+          if (value > 0) { // Show all non-zero emotions
+            const pill = document.createElement('div');
+            pill.className = 'emotion-pill';
+            pill.textContent = `${emotion}: ${(value * 100).toFixed(1)}%`;
+            emotionStats.appendChild(pill);
+          }
         });
       }
 
