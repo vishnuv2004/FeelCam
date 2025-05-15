@@ -11,3 +11,4 @@ facial-emotion-recognition-explained-ste-b1f21d.ipynb
 .idea
 .env
 emotion_model.h5
+Dockerfile
